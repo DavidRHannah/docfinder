@@ -1,0 +1,2 @@
+[console_scripts]
+docfinder = docfinder.cli:main
