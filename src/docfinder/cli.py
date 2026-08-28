@@ -24,7 +24,7 @@ def run_scan(
     target_dir = target_dir.resolve()
     out_dir = (output_dir or target_dir).resolve()
 
-    print(f"[PyDocFinder v{__version__}] Scanning codebase at: {target_dir}")
+    print(f"[DocFinder v{__version__}] Scanning codebase at: {target_dir}")
 
     # 1. Parse dependencies
     manifest_parser = ManifestParser(target_dir)

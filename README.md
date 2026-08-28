@@ -1,6 +1,6 @@
-# PyDocFinder
+# DocFinder
 
-PyDocFinder scans a Python project and creates a list of documentation for the packages and symbols it uses. It is useful when you are new to a codebase or need a quick view of its dependencies.
+DocFinder scans a Python project and creates a list of documentation for the packages and symbols it uses. It is useful when you are new to a codebase or need a quick view of its dependencies.
 
 ## What it does
 
