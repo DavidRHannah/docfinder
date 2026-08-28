@@ -9,7 +9,7 @@ from docfinder.models import PackageReport
 def generate_markdown_report(packages: List[PackageReport], output_path: Path) -> None:
     md = [
         "# Codebase Documentation Catalog\n",
-        "> Generated automatically by [DocFinder](https://github.com/DavidRHannah/doc-finder)\n",
+        "> Generated automatically by [DocFinder](https://github.com/DavidRHannah/docfinder)\n",
         "| Package | Version | Symbols Detected | Primary Documentation |",
         "| :--- | :--- | :--- | :--- |",
     ]
