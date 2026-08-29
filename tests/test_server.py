@@ -1,4 +1,3 @@
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -84,6 +83,38 @@ class MyStack(Stack):
         self.assertEqual(res.get("id"), 1)
         self.assertTrue(res.get("result", {}).get("found"))
         self.assertEqual(res.get("result", {}).get("symbol"), "aws_cdk.CfnOutput")
+
+    def test_resolve_at_position_line_fallback(self):
+        """Cursor on an alias that is not an AST node (here: inside a comment)."""
+        sample = self.workspace / "commented.py"
+        sample.write_text("import stix2\n\n# stix2 is used below\n")
+        resp = self.server.resolve_at_position(
+            file_path=str(sample),
+            line=3,
+            character=4,
+        )
+        self.assertIsNone(resp.get("error"))
+        self.assertTrue(resp.get("found"))
+        self.assertEqual(resp.get("symbol"), "stix2")
+
+    def test_resolve_at_position_on_blank_area_is_not_found(self):
+        resp = self.server.resolve_at_position(
+            file_path=str(self.workspace / "stack.py"),
+            line=6,
+            character=0,
+        )
+        self.assertFalse(resp.get("found"))
+
+    def test_refresh_catalog_picks_up_manifest_changes(self):
+        (self.workspace / "pyproject.toml").write_text("""
+[project]
+name = "demo"
+version = "0.1.0"
+dependencies = ["stix2==3.0.1"]
+""")
+        self.server.refresh_catalog()
+        self.assertNotIn("aws-cdk-lib", self.server.declared_pkgs)
+        self.assertIn("stix2", self.server.declared_pkgs)
 
     def test_get_workspace_catalog(self):
         catalog = self.server.get_workspace_catalog()

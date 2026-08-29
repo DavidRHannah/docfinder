@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 from typing import List
 
@@ -63,15 +64,17 @@ def generate_html_report(packages: List[PackageReport], output_path: Path) -> No
         sym_rows = []
         for sym, usages in sorted(pkg.used_symbols.items(), key=lambda x: len(x[1]), reverse=True):
             doc_link = pkg.symbol_doc_links.get(sym, pkg.doc_url)
-            locs = "<br>".join(f"<code>{u.file_path}:{u.line_number}</code>" for u in usages[:5])
+            locs = "<br>".join(
+                f"<code>{escape(u.file_path)}:{u.line_number}</code>" for u in usages[:5]
+            )
             if len(usages) > 5:
                 locs += f"<br><small class='text-muted'>+{len(usages)-5} more</small>"
 
             sym_rows.append(f"""
             <tr>
-                <td><span class="symbol-code">{sym}</span></td>
+                <td><span class="symbol-code">{escape(sym)}</span></td>
                 <td><span class="badge badge-count">{len(usages)}</span></td>
-                <td><a href="{doc_link}" target="_blank" rel="noopener">Open Official Docs ↗</a></td>
+                <td><a href="{escape(doc_link, quote=True)}" target="_blank" rel="noopener">Open Official Docs ↗</a></td>
                 <td><small>{locs}</small></td>
             </tr>
             """)
@@ -82,11 +85,11 @@ def generate_html_report(packages: List[PackageReport], output_path: Path) -> No
         <div class="card pkg-card shadow-sm">
             <div class="card-header bg-transparent border-bottom border-secondary d-flex justify-content-between align-items-center py-3">
                 <div>
-                    <h4 class="h5 mb-1 text-white fw-bold">{pkg.dist_name} <span class="badge badge-pkg fs-6">{pkg.version_spec}</span></h4>
-                    <small class="text-secondary">Import root: <code>{pkg.import_name}</code> | Source: {pkg.doc_source_type}</small>
+                    <h4 class="h5 mb-1 text-white fw-bold">{escape(pkg.dist_name)} <span class="badge badge-pkg fs-6">{escape(pkg.version_spec)}</span></h4>
+                    <small class="text-secondary">Import root: <code>{escape(pkg.import_name)}</code> | Source: {escape(pkg.doc_source_type)}</small>
                 </div>
                 <div>
-                    <a href="{pkg.doc_url}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info">Main Package Docs ↗</a>
+                    <a href="{escape(pkg.doc_url, quote=True)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info">Main Package Docs ↗</a>
                 </div>
             </div>
             <div class="card-body p-0">

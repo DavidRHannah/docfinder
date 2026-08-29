@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Dict, List
 
 from docfinder import __version__
+from docfinder.catalog import build_package_reports
 from docfinder.manifest import ManifestParser
 from docfinder.models import PackageReport
 from docfinder.reporters.html import generate_html_report
@@ -21,6 +21,7 @@ def run_scan(
     generate_md: bool = True,
     generate_html: bool = True,
     output_dir: Path | None = None,
+    offline: bool = False,
 ) -> List[PackageReport]:
     target_dir = target_dir.resolve()
     out_dir = (output_dir or target_dir).resolve()
@@ -35,52 +36,13 @@ def run_scan(
     # 2. Scan ASTs
     ast_scanner = ASTProjectScanner(target_dir)
     symbol_usages = ast_scanner.scan()
-    print(f"Extracted symbol usage from codebase.")
+    print(f"Extracted {len(symbol_usages)} unique symbols from codebase.")
 
     # 3. Resolve Documentation
-    doc_resolver = DocResolverEngine()
-    package_reports: Dict[str, PackageReport] = {}
-
-    for dist_name, ver in declared_pkgs.items():
-        imp_name = manifest_parser.get_import_name(dist_name)
-        main_url, doc_type = doc_resolver.resolve_symbol(imp_name, dist_name, imp_name)
-        package_reports[imp_name] = PackageReport(
-            dist_name=dist_name,
-            import_name=imp_name,
-            version_spec=ver,
-            doc_url=main_url,
-            doc_source_type=doc_type,
-        )
-
-    # Attach symbol usages
-    for sym, usages in symbol_usages.items():
-        top_mod = sym.split(".")[0]
-        if top_mod in package_reports:
-            report = package_reports[top_mod]
-            report.used_symbols[sym].extend(usages)
-            doc_link, _ = doc_resolver.resolve_symbol(top_mod, report.dist_name, sym)
-            report.symbol_doc_links[sym] = doc_link
-
-    # Also detect non-declared third party or stdlib packages if heavily used
-    imported_tops = {sym.split(".")[0] for sym in symbol_usages.keys()}
-    ignore_roots = {"src", "infra", "tests", "config", "scripts", "docfinder"}
-    for top_mod in imported_tops:
-        if top_mod not in package_reports and top_mod not in ignore_roots:
-            main_url, doc_type = doc_resolver.resolve_symbol(top_mod, top_mod, top_mod)
-            report = PackageReport(
-                dist_name=top_mod,
-                import_name=top_mod,
-                version_spec="imported",
-                doc_url=main_url,
-                doc_source_type=doc_type,
-            )
-            for sym, usages in symbol_usages.items():
-                if sym.split(".")[0] == top_mod:
-                    report.used_symbols[sym].extend(usages)
-                    doc_link, _ = doc_resolver.resolve_symbol(top_mod, top_mod, sym)
-                    report.symbol_doc_links[sym] = doc_link
-            package_reports[top_mod] = report
-
+    doc_resolver = DocResolverEngine(offline=offline)
+    package_reports: Dict[str, PackageReport] = build_package_reports(
+        target_dir, declared_pkgs, manifest_parser, doc_resolver, symbol_usages
+    )
     reports_list = list(package_reports.values())
 
     # 4. Generate Reports
@@ -137,6 +99,11 @@ def main():
         help="Directory to save generated report files",
     )
     parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Skip all network lookups (Intersphinx and PyPI) and resolve from built-in rules only",
+    )
+    parser.add_argument(
         "-v",
         "--version",
         action="version",
@@ -147,8 +114,9 @@ def main():
     target_path = Path(args.path).resolve()
 
     if args.server_mode:
-        server = DocFinderServer(target_path)
-        server.initialize()
+        # The catalog is built lazily: the client's `initialize` request drives
+        # the first scan, so the daemon is responsive to stdin immediately.
+        server = DocFinderServer(target_path, offline=args.offline)
         server.serve_forever()
         return
 
@@ -159,6 +127,7 @@ def main():
         generate_md=not args.no_md,
         generate_html=not args.no_html,
         output_dir=output_path,
+        offline=args.offline,
     )
 
 

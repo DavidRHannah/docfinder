@@ -39,7 +39,18 @@ export class DocBrowser {
     }
   }
 
+  private static escape(value: string): string {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   private static openFallbackWebview(url: string, title: string, viewColumn: vscode.ViewColumn) {
+    const safeTitle = DocBrowser.escape(title);
+    const safeUrl = DocBrowser.escape(url);
     const panel = vscode.window.createWebviewPanel(
       "docfinderBrowser",
       title,
@@ -54,7 +65,7 @@ export class DocBrowser {
 <html lang="en" style="height: 100%; margin: 0; padding: 0;">
 <head>
   <meta charset="UTF-8">
-  <title>${title}</title>
+  <title>${safeTitle}</title>
   <style>
     body, html { height: 100%; margin: 0; padding: 0; overflow: hidden; background: #1e1e1e; font-family: sans-serif; }
     .toolbar { height: 36px; background: #252526; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid #3c3c3c; }
@@ -65,11 +76,11 @@ export class DocBrowser {
 </head>
 <body>
   <div class="toolbar">
-    <span style="color: #9cdcfe; font-size: 13px; font-weight: bold;">📖 ${title}</span>
+    <span style="color: #9cdcfe; font-size: 13px; font-weight: bold;">📖 ${safeTitle}</span>
     <span style="flex: 1;"></span>
-    <a href="${url}" target="_blank">Open in External Browser ↗</a>
+    <a href="${safeUrl}" target="_blank">Open in External Browser ↗</a>
   </div>
-  <iframe src="${url}"></iframe>
+  <iframe src="${safeUrl}"></iframe>
 </body>
 </html>`;
   }

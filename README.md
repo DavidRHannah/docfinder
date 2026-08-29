@@ -58,6 +58,13 @@ docfinder --no-md
 docfinder --no-html
 ```
 
+Skip all network lookups (Sphinx inventories and PyPI metadata) and resolve from the
+built-in rules only:
+
+```bash
+docfinder --offline
+```
+
 Run `docfinder --help` to see all command-line options.
 
 ## Project layout
@@ -68,6 +75,8 @@ src/docfinder/
 ├── manifest.py   # Dependency discovery
 ├── scanner.py    # Python source-code scanning
 ├── resolver.py   # Documentation-link lookup
+├── catalog.py    # Package/symbol catalog assembly
+├── server.py     # JSON-RPC daemon for the VS Code extension
 └── reporters/    # Terminal, Markdown, and HTML reports
 
 tests/            # Automated tests

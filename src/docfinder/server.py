@@ -6,8 +6,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from docfinder.catalog import build_package_reports
 from docfinder.manifest import ManifestParser
-from docfinder.models import PackageReport, SymbolUsage
+from docfinder.models import PackageReport
 from docfinder.resolver import DocResolverEngine
 from docfinder.scanner import ASTProjectScanner, CodeUsageVisitor
 
@@ -21,20 +22,12 @@ class PositionSymbolFinder(ast.NodeVisitor):
         self.import_aliases = import_aliases
         self.candidates: List[Tuple[str, Tuple[int, int, int, int], int]] = []  # (symbol, range, depth)
 
-    @property
-    def matched_symbol(self) -> Optional[str]:
+    def best_match(self) -> Optional[Tuple[str, Tuple[int, int, int, int]]]:
+        """Returns (symbol, range) for the most specific attribute chain at the cursor."""
         if not self.candidates:
             return None
-        # Sort candidates by depth (most specific attribute chain first)
-        best = max(self.candidates, key=lambda c: (c[2], len(c[0])))
-        return best[0]
-
-    @property
-    def matched_range(self) -> Optional[Tuple[int, int, int, int]]:
-        if not self.candidates:
-            return None
-        best = max(self.candidates, key=lambda c: (c[2], len(c[0])))
-        return best[1]
+        symbol, symbol_range, _ = max(self.candidates, key=lambda c: (c[2], len(c[0])))
+        return symbol, symbol_range
 
     def visit_Name(self, node: ast.Name):
         if node.lineno == self.target_line:
@@ -73,10 +66,10 @@ class PositionSymbolFinder(ast.NodeVisitor):
 class DocFinderServer:
     """JSON-RPC 2.0 Server for VS Code Extension Integration."""
 
-    def __init__(self, workspace_root: Optional[Path] = None):
+    def __init__(self, workspace_root: Optional[Path] = None, offline: bool = False):
         self.workspace_root = workspace_root.resolve() if workspace_root else Path.cwd().resolve()
         self.manifest_parser = ManifestParser(self.workspace_root)
-        self.doc_resolver = DocResolverEngine()
+        self.doc_resolver = DocResolverEngine(offline=offline)
         self.declared_pkgs: Dict[str, str] = {}
         self.package_reports: Dict[str, PackageReport] = {}
         self.is_initialized = False
@@ -86,7 +79,6 @@ class DocFinderServer:
             self.workspace_root = Path(workspace_root).resolve()
             self.manifest_parser = ManifestParser(self.workspace_root)
 
-        self.declared_pkgs = self.manifest_parser.parse()
         self.refresh_catalog()
         self.is_initialized = True
         return {
@@ -95,51 +87,23 @@ class DocFinderServer:
             "declaredPackagesCount": len(self.declared_pkgs),
         }
 
+    def _ensure_initialized(self) -> None:
+        if not self.is_initialized:
+            self.initialize()
+
     def refresh_catalog(self) -> Dict[str, Any]:
-        ast_scanner = ASTProjectScanner(self.workspace_root)
-        symbol_usages = ast_scanner.scan()
-
-        package_reports: Dict[str, PackageReport] = {}
-        for dist_name, ver in self.declared_pkgs.items():
-            imp_name = self.manifest_parser.get_import_name(dist_name)
-            main_url, doc_type = self.doc_resolver.resolve_symbol(imp_name, dist_name, imp_name)
-            package_reports[imp_name] = PackageReport(
-                dist_name=dist_name,
-                import_name=imp_name,
-                version_spec=ver,
-                doc_url=main_url,
-                doc_source_type=doc_type,
-            )
-
-        for sym, usages in symbol_usages.items():
-            top_mod = sym.split(".")[0]
-            if top_mod in package_reports:
-                report = package_reports[top_mod]
-                report.used_symbols[sym].extend(usages)
-                doc_link, _ = self.doc_resolver.resolve_symbol(top_mod, report.dist_name, sym)
-                report.symbol_doc_links[sym] = doc_link
-
-        imported_tops = {sym.split(".")[0] for sym in symbol_usages.keys()}
-        ignore_roots = {"src", "infra", "tests", "config", "scripts", "docfinder"}
-        for top_mod in imported_tops:
-            if top_mod not in package_reports and top_mod not in ignore_roots:
-                main_url, doc_type = self.doc_resolver.resolve_symbol(top_mod, top_mod, top_mod)
-                report = PackageReport(
-                    dist_name=top_mod,
-                    import_name=top_mod,
-                    version_spec="imported",
-                    doc_url=main_url,
-                    doc_source_type=doc_type,
-                )
-                for sym, usages in symbol_usages.items():
-                    if sym.split(".")[0] == top_mod:
-                        report.used_symbols[sym].extend(usages)
-                        doc_link, _ = self.doc_resolver.resolve_symbol(top_mod, top_mod, sym)
-                        report.symbol_doc_links[sym] = doc_link
-                package_reports[top_mod] = report
-
-        self.package_reports = package_reports
-        return {"status": "ok", "packagesCount": len(package_reports)}
+        # Re-read the manifest so dependency edits are picked up without a restart.
+        self.declared_pkgs = self.manifest_parser.parse()
+        symbol_usages = ASTProjectScanner(self.workspace_root).scan()
+        self.package_reports = build_package_reports(
+            self.workspace_root,
+            self.declared_pkgs,
+            self.manifest_parser,
+            self.doc_resolver,
+            symbol_usages,
+        )
+        self.is_initialized = True
+        return {"status": "ok", "packagesCount": len(self.package_reports)}
 
     def resolve_at_position(
         self,
@@ -172,16 +136,13 @@ class DocFinderServer:
             pos_finder = PositionSymbolFinder(line, character, visitor.import_aliases)
             pos_finder.visit(tree)
 
-            if not pos_finder.matched_symbol:
+            match = pos_finder.best_match()
+            if match is None:
                 # Fallback: check if the line has a known symbol matching word under cursor
-                matched = self._fallback_line_match(lines, line, character, visitor.import_aliases)
-                if matched:
-                    sym, rng = matched
-                    pos_finder.matched_symbol = sym
-                    pos_finder.matched_range = rng
+                match = self._fallback_line_match(lines, line, character, visitor.import_aliases)
 
-            if pos_finder.matched_symbol:
-                sym = pos_finder.matched_symbol
+            if match:
+                sym, sym_range = match
                 top_mod = sym.split(".")[0]
                 dist_name = top_mod
                 version_spec = "latest"
@@ -202,10 +163,10 @@ class DocFinderServer:
                     "docUrl": doc_url,
                     "docType": doc_type,
                     "range": {
-                        "startLine": pos_finder.matched_range[0] if pos_finder.matched_range else line,
-                        "startCol": pos_finder.matched_range[1] if pos_finder.matched_range else character,
-                        "endLine": pos_finder.matched_range[2] if pos_finder.matched_range else line,
-                        "endCol": pos_finder.matched_range[3] if pos_finder.matched_range else character,
+                        "startLine": sym_range[0],
+                        "startCol": sym_range[1],
+                        "endLine": sym_range[2],
+                        "endCol": sym_range[3],
                     },
                 }
 
@@ -237,6 +198,7 @@ class DocFinderServer:
 
     def get_workspace_catalog(self) -> Dict[str, Any]:
         """Returns structured data for the Sidebar TreeView and Webview."""
+        self._ensure_initialized()
         packages = []
         for pkg in sorted(self.package_reports.values(), key=lambda p: (len(p.used_symbols) == 0, p.dist_name)):
             symbols = []
@@ -271,6 +233,7 @@ class DocFinderServer:
             if method == "initialize":
                 result = self.initialize(params.get("workspaceRoot"))
             elif method == "resolveAtPosition":
+                self._ensure_initialized()
                 result = self.resolve_at_position(
                     file_path=params.get("filePath", ""),
                     line=int(params.get("line", 1)),

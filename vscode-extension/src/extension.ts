@@ -29,7 +29,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // 2. Register Sidebar TreeView
   const treeProvider = new DocFinderTreeProvider(client, rootPath);
-  vscode.window.registerTreeDataProvider("docfinder-tree", treeProvider);
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider("docfinder-tree", treeProvider)
+  );
 
   // 3. Register Commands
   context.subscriptions.push(
@@ -148,9 +150,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("docfinder.scanWorkspace", async () => {
+      // Run through the same interpreter as the daemon: the `docfinder` script
+      // is not necessarily on the terminal's PATH.
+      const python = client ? await client.resolveInterpreter() : "python3";
       const terminal = vscode.window.createTerminal("DocFinder Scan");
       terminal.show();
-      terminal.sendText(`docfinder "${rootPath}"`);
+      terminal.sendText(`"${python}" -m docfinder.cli "${rootPath}"`);
     })
   );
 

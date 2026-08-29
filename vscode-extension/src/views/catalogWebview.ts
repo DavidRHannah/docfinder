@@ -43,17 +43,28 @@ export class CatalogWebviewPanel {
       const catalog = await client.getWorkspaceCatalog();
       this.panel.webview.html = this.getHtmlContent(catalog.packages || []);
     } catch (err) {
-      this.panel.webview.html = `<h3>Error loading catalog: ${err}</h3>`;
+      this.panel.webview.html = `<h3>Error loading catalog: ${CatalogWebviewPanel.escape(err)}</h3>`;
     }
   }
 
+  /** Symbol names and doc URLs come from scanned source and package metadata. */
+  private static escape(value: unknown): string {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   private getHtmlContent(packages: CatalogPackage[]): string {
+    const esc = CatalogWebviewPanel.escape;
     const cards = packages.map((pkg) => {
       const symRows = pkg.symbols
         .map((s) => {
           const locs = s.locations
             .slice(0, 4)
-            .map((l) => `<code>${l.file}:${l.line}</code>`)
+            .map((l) => `<code>${esc(l.file)}:${esc(l.line)}</code>`)
             .join("<br>");
           const more =
             s.locations.length > 4
@@ -61,9 +72,9 @@ export class CatalogWebviewPanel {
               : "";
           return `
             <tr>
-              <td><span class="symbol-name">${s.symbol}</span></td>
-              <td><span class="badge badge-count">${s.usageCount}</span></td>
-              <td><a href="${s.docUrl}" target="_blank">Open Documentation ↗</a></td>
+              <td><span class="symbol-name">${esc(s.symbol)}</span></td>
+              <td><span class="badge badge-count">${esc(s.usageCount)}</span></td>
+              <td><a href="${esc(s.docUrl)}" target="_blank">Open Documentation ↗</a></td>
               <td><small>${locs}${more}</small></td>
             </tr>
           `;
@@ -74,11 +85,11 @@ export class CatalogWebviewPanel {
         <div class="card pkg-card mb-4">
           <div class="card-header d-flex justify-content-between align-items-center">
             <div>
-              <h5 class="mb-0 fw-bold">📦 ${pkg.packageName} <span class="badge badge-pkg">${pkg.version}</span></h5>
-              <small class="text-secondary">Source: ${pkg.docType}</small>
+              <h5 class="mb-0 fw-bold">📦 ${esc(pkg.packageName)} <span class="badge badge-pkg">${esc(pkg.version)}</span></h5>
+              <small class="text-secondary">Source: ${esc(pkg.docType)}</small>
             </div>
             <div>
-              <a href="${pkg.docUrl}" target="_blank" class="btn btn-sm btn-outline-info">Package Docs ↗</a>
+              <a href="${esc(pkg.docUrl)}" target="_blank" class="btn btn-sm btn-outline-info">Package Docs ↗</a>
             </div>
           </div>
           <div class="card-body p-0">

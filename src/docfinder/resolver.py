@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import urllib.request
 import zlib
 from typing import Any, Dict, Optional, Set, Tuple
+from urllib.parse import quote
 
 
 class IntersphinxInventory:
     """Parses Sphinx objects.inv files to map symbols to exact documentation anchors."""
+
+    # "name domain:role priority uri dispname" - the name itself may contain spaces,
+    # so a plain str.split() mis-reads any entry with a multi-word name.
+    ENTRY_RE = re.compile(r"(?x)(.+?)\s+(\S+)\s+(-?\d+)\s+?(\S*)\s+(.*)")
+
+    # Python API objects describe a symbol; std:label / std:doc / std:cmdoption
+    # entries merely happen to share its name, so they lose the tie.
+    DOMAIN_PRIORITY = {"py": 0, "std": 2}
 
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/") + "/"
@@ -29,16 +39,27 @@ class IntersphinxInventory:
             decompressed = zlib.decompress(b"\n".join(lines[4:]))
             text = decompressed.decode("utf-8", errors="ignore")
 
+            ranks: Dict[str, int] = {}
             for line in text.splitlines():
                 if not line or line.startswith("#"):
                     continue
-                parts = line.split()
-                if len(parts) >= 4:
-                    name = parts[0]
-                    uri = parts[3]
-                    if uri.endswith("$"):
-                        uri = uri[:-1] + name
-                    self.items[name] = self.base_url + uri
+                match = self.ENTRY_RE.match(line.rstrip())
+                if not match:
+                    continue
+
+                name, domain_role, _priority, uri, _dispname = match.groups()
+                if not uri:
+                    continue
+                if uri.endswith("$"):
+                    uri = uri[:-1] + name
+
+                domain = domain_role.split(":")[0]
+                rank = self.DOMAIN_PRIORITY.get(domain, 1)
+                if name in ranks and ranks[name] <= rank:
+                    continue
+
+                ranks[name] = rank
+                self.items[name] = self.base_url + uri
 
             self.loaded = True
             return True
@@ -80,22 +101,38 @@ class DocResolverEngine:
         "decimal", "concurrent"
     }
 
-    def __init__(self):
-        self.inventories: Dict[str, IntersphinxInventory] = {}
-        self.pypi_cache: Dict[str, Dict[str, Any]] = {}
+    def __init__(self, offline: bool = False):
+        self.offline = offline
+        # Values may be None: a failed lookup is cached so it is not retried per symbol.
+        self.inventories: Dict[str, Optional[IntersphinxInventory]] = {}
+        self.pypi_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+        self._symbol_cache: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
 
     def get_inventory(self, pkg_name: str) -> Optional[IntersphinxInventory]:
         if pkg_name in self.inventories:
             return self.inventories[pkg_name]
-        if pkg_name in self.KNOWN_INVENTORIES:
-            inv = IntersphinxInventory(self.KNOWN_INVENTORIES[pkg_name])
-            if inv.load():
-                self.inventories[pkg_name] = inv
-                return inv
-        return None
+
+        inv: Optional[IntersphinxInventory] = None
+        base_url = self.KNOWN_INVENTORIES.get(pkg_name)
+        if base_url and not self.offline:
+            candidate = IntersphinxInventory(base_url)
+            if candidate.load():
+                inv = candidate
+
+        self.inventories[pkg_name] = inv
+        return inv
 
     def resolve_symbol(self, top_module: str, dist_name: str, symbol: str) -> Tuple[str, str]:
-        """Returns (doc_url, doc_type)."""
+        """Returns (doc_url, doc_type). Results are memoised per engine instance."""
+        key = (top_module, dist_name, symbol)
+        cached = self._symbol_cache.get(key)
+        if cached is not None:
+            return cached
+        result = self._resolve_symbol(top_module, dist_name, symbol)
+        self._symbol_cache[key] = result
+        return result
+
+    def _resolve_symbol(self, top_module: str, dist_name: str, symbol: str) -> Tuple[str, str]:
 
         # 1. Python Standard Library
         if top_module in self.STDLIB_MODULES:
@@ -171,12 +208,20 @@ class DocResolverEngine:
     def _get_pypi_metadata(self, pkg_name: str) -> Optional[Dict[str, Any]]:
         if pkg_name in self.pypi_cache:
             return self.pypi_cache[pkg_name]
+        if self.offline or not pkg_name:
+            self.pypi_cache[pkg_name] = None
+            return None
+
+        data: Optional[Dict[str, Any]] = None
         try:
-            url = f"https://pypi.org/pypi/{pkg_name}/json"
+            url = f"https://pypi.org/pypi/{quote(pkg_name, safe='')}/json"
             req = urllib.request.Request(url, headers={"User-Agent": "DocFinder/1.0"})
             with urllib.request.urlopen(req, timeout=3.0) as resp:
                 data = json.loads(resp.read().decode())
-                self.pypi_cache[pkg_name] = data
-                return data
         except Exception:
-            return None
+            data = None
+
+        # Cache failures too, so an unreachable network costs one attempt per
+        # package rather than one attempt per symbol.
+        self.pypi_cache[pkg_name] = data
+        return data
