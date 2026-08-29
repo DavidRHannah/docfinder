@@ -13,6 +13,7 @@ from docfinder.reporters.markdown import generate_markdown_report
 from docfinder.reporters.terminal import print_terminal_report
 from docfinder.resolver import DocResolverEngine
 from docfinder.scanner import ASTProjectScanner
+from docfinder.server import DocFinderServer
 
 
 def run_scan(
@@ -112,6 +113,13 @@ def main():
         help="Target project directory to scan (default: current directory)",
     )
     parser.add_argument(
+        "--server",
+        "--daemon",
+        dest="server_mode",
+        action="store_true",
+        help="Run in JSON-RPC daemon server mode for IDE / VS Code extension integration",
+    )
+    parser.add_argument(
         "--no-md",
         action="store_true",
         help="Disable Markdown report generation",
@@ -136,7 +144,14 @@ def main():
     )
 
     args = parser.parse_args()
-    target_path = Path(args.path)
+    target_path = Path(args.path).resolve()
+
+    if args.server_mode:
+        server = DocFinderServer(target_path)
+        server.initialize()
+        server.serve_forever()
+        return
+
     output_path = Path(args.output_dir) if args.output_dir else None
 
     run_scan(

@@ -1,3 +1,6 @@
 .venv/
 examples/
 threat-intel-report/
+__pycache__/
+*.egg-info/
+*.pyc

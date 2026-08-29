@@ -1,0 +1,138 @@
+{
+  "name": "vscode-docfinder",
+  "displayName": "DocFinder - Python Codebase Documentation",
+  "description": "Instant documentation hover tooltips and workspace catalog for Python packages, classes, and symbols.",
+  "version": "0.1.0",
+  "publisher": "DavidRHannah",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DavidRHannah/docfinder"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Documentation",
+    "Other"
+  ],
+  "keywords": [
+    "python",
+    "documentation",
+    "cdk",
+    "aws",
+    "boto3",
+    "hover",
+    "intersphinx"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:python",
+    "onView:docfinder-tree"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "docfinder.openDocBeside",
+        "title": "DocFinder: Open Documentation in Side Tab",
+        "category": "DocFinder"
+      },
+      {
+        "command": "docfinder.openDocInTab",
+        "title": "DocFinder: Open Documentation in Current Tab",
+        "category": "DocFinder"
+      },
+      {
+        "command": "docfinder.openDocAtCursor",
+        "title": "DocFinder: Open Documentation for Symbol at Cursor (External Browser)",
+        "category": "DocFinder"
+      },
+      {
+        "command": "docfinder.refreshCatalog",
+        "title": "DocFinder: Refresh Workspace Documentation Catalog",
+        "category": "DocFinder",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "docfinder.openWebview",
+        "title": "DocFinder: Open Interactive Documentation Catalog",
+        "category": "DocFinder",
+        "icon": "$(book)"
+      },
+      {
+        "command": "docfinder.scanWorkspace",
+        "title": "DocFinder: Generate Markdown and HTML Documentation Reports",
+        "category": "DocFinder"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "docfinder-view",
+          "title": "DocFinder",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "docfinder-view": [
+        {
+          "id": "docfinder-tree",
+          "name": "Documentation Catalog"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "docfinder.refreshCatalog",
+          "when": "view == docfinder-tree",
+          "group": "navigation"
+        },
+        {
+          "command": "docfinder.openWebview",
+          "when": "view == docfinder-tree",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "docfinder.openDocAtCursor",
+          "when": "editorLangId == python",
+          "group": "navigation@10"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DocFinder",
+      "properties": {
+        "docfinder.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to Python executable. If empty, uses the active Python interpreter from the VS Code Python extension or system PATH."
+        },
+        "docfinder.enableHover": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show documentation links in hover tooltips for Python symbols."
+        },
+        "docfinder.autoScanOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically initialize and scan documentation when opening a Python project."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.3.0"
+  }
+}

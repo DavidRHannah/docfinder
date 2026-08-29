@@ -1,0 +1,8 @@
+.vscode/**
+.vscode-test/**
+tsconfig.json
+**/*.map
+node_modules/**
+package-lock.json
+vscode-docfinder-0.1.0.vsix
+/dist
